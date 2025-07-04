@@ -7,16 +7,17 @@ use App\Http\Requests\ExtractEmailRequest;
 use App\Http\Requests\ExcelRequest;
 use App\Services\EmailQueueService;
 use App\Models\Application;
-use App\Services\EmailLogService;
+use PhpAmqpLib\Exception\AMQPIOException;
+use PhpAmqpLib\Exception\AMQPConnectionClosedException;
 
 class EmailQueueController extends Controller
 {
-    private $emailService;
+    private $EmailQueueService;
 
     //Constructor untuk menginisialisasi service 
-    public function __construct(EmailQueueService $emailService)
+    public function __construct(EmailQueueService $EmailQueueService)
     {
-        $this->emailService = $emailService;
+        $this->EmailQueueService = $EmailQueueService;
     }
 
     //Function untuk mengirim email ke dalam queue RabbitMQ
@@ -46,23 +47,29 @@ class EmailQueueController extends Controller
             return $priorityMap[$b['priority']] <=> $priorityMap[$a['priority']];
         });
 
-        $messages = [];
-        foreach ($data['mail'] as $mail) {
-            // Buat entry log dengan status 'pending'
-            $emailLog = app(EmailLogService::class)->logEmail($mail, $application->id);
-            $mail['id'] = $emailLog->id;
-            $messages[] = $mail;
+        try {
+            $result = $this->EmailQueueService->processAndQueueEmails($data['mail'], $data['secret']);
+        } catch (AMQPIOException | AMQPConnectionClosedException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tidak dapat terhubung ke RabbitMQ. Hubungi administrator.',
+            ], 503);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan internal.',
+            ], 500);
         }
 
-        // Email di proses dan dimasukkan ke dalam antrian RabbitMQ
-        $result = $this->emailService->processAndQueueEmails($messages, $data['secret']);
         if (isset($result['error'])) {
+            $status = str_contains($result['error'], 'RabbitMQ') ? 503 : 422;
             return response()->json([
                 'success' => false,
                 'message' => $result['error'],
-            ], 422);
+            ], $status);
         }
 
+        // Setelah berhasil, log sudah dibuat di service, tinggal return
         return response()->json([
             'success' => true,
             'message' => 'Email masuk kedalam antrian',
@@ -82,13 +89,21 @@ class EmailQueueController extends Controller
             ], 400);
         }
 
-        $result = $this->emailService->processEmailsFromExcel($file);
+        try {
+            $result = $this->EmailQueueService->processEmailsFromExcel($file);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan internal. Tidak dapat terhubung ke RabbitMQ',
+            ], 500);
+        }
 
         if (isset($result['error'])) {
+            $status = str_contains($result['error'], 'RabbitMQ') ? 503 : 400;
             return response()->json([
                 'success' => false,
                 'message' => $result['error'],
-            ], 400);
+            ], $status);
         }
 
         if (isset($result['validationErrors'])) {
@@ -98,6 +113,7 @@ class EmailQueueController extends Controller
             ], 422);
         }
 
+        // Log sudah dibuat di service, tinggal return
         return response()->json([
             'success' => true,
             'message' => 'Email dari file excel masuk kedalam antrian',
@@ -108,7 +124,7 @@ class EmailQueueController extends Controller
     //Function untuk mengambil data email log berdasarkan id
     public function extractEmailData(ExtractEmailRequest $request)
     {
-        $data = $this->emailService->extractEmailLogData($request);
+        $data = $this->EmailQueueService->extractEmailLogData($request);
         return response()->json([
             'success' => true,
             'data' => $data,

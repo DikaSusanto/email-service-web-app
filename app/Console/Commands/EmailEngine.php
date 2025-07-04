@@ -8,10 +8,12 @@ use App\Services\RabbitMQService;
 use App\Services\EngineService;
 use App\Services\EmailLogService;
 use PhpAmqpLib\Message\AMQPMessage;
+use PhpAmqpLib\Exception\AMQPIOException;
+use PhpAmqpLib\Exception\AMQPConnectionClosedException;
 
 class EmailEngine extends Command
 {
-    // Mendefinisikan signature command yang akan digunakan di terminal
+    // Mendefinisikan signature command yang digunakan di terminal
     protected $signature = 'rabbitmq:consume';
     protected $description = 'Mengonsumsi Email dari RabbitMQ dan memroses untuk dikirim';
 
@@ -32,8 +34,17 @@ class EmailEngine extends Command
     public function handle()
     {
         $this->info('Email Engine dimulai...');
-        $this->RabbitMQService->consume('email_queue', [$this, 'processEmail']);
-        $this->RabbitMQService->wait();
+        try {
+            $this->RabbitMQService->connect();
+            $this->RabbitMQService->consume('email_queue', [$this, 'processEmail']);
+            $this->RabbitMQService->wait();
+        } catch (AMQPIOException | AMQPConnectionClosedException $e) {
+            $this->error('Tidak dapat terhubung ke RabbitMQ. Hubungi administrator.');
+            return 1;
+        } catch (\Exception $e) {
+            $this->error('Terjadi kesalahan internal.');
+            return 1;
+        }
     }
 
     // Function untuk memvalidasi aplikasi berdasarkan secret key

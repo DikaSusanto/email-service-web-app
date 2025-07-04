@@ -1149,14 +1149,39 @@ async function handleSubmit() {
             if (error.response.status === 422) {
                 invalidKey.value =
                     error.response.data.error || error.response.data.message;
-            } else {
-                invalidKey.value =
-                    error.response.data.error || error.response.data.message;
+            }
+            else if (
+                error.response.status === 500 ||
+                error.response.status === 503
+            ) {
+                errorMessage.value = {
+                    general: [
+                        error.response.data.message ||
+                        "Terjadi kesalahan pada server (RabbitMQ)."
+                    ],
+                };
                 emit(
                     "notification",
                     "danger",
                     "Gagal!",
-                    error.response.data.error || error.response.data.message
+                    error.response.data.message ||
+                    "Terjadi kesalahan pada server (RabbitMQ)."
+                );
+            } else {
+                errorMessage.value = {
+                    general: [
+                        error.response.data.error ||
+                        error.response.data.message ||
+                        "Terjadi kesalahan yang tidak diketahui"
+                    ],
+                };
+                emit(
+                    "notification",
+                    "danger",
+                    "Gagal!",
+                    error.response.data.error ||
+                    error.response.data.message ||
+                    "Terjadi kesalahan yang tidak diketahui"
                 );
             }
         } else {

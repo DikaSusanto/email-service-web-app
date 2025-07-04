@@ -1172,6 +1172,14 @@ async function handleRetry() {
             );
         }
     } catch (error) {
+        if (
+            error.response &&
+            (error.response.status === 500 || error.response.status === 503)
+        ) {
+            validationErrors.value.general =
+                error.response.data.message ||
+                "Terjadi kesalahan pada server (RabbitMQ).";
+        }
         emit(
             "notification",
             "danger",

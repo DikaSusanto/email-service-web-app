@@ -2,22 +2,23 @@
 
 namespace App\Services;
 
-use App\Http\Requests\SendEmailRequest;
 use App\Http\Requests\ExtractEmailRequest;
 use App\Models\Application;
 use PhpAmqpLib\Message\AMQPMessage;
-use App\Helpers\ResponseHelper;
+use App\Services\EmailLogService;
 use App\Models\EmailLog;
 use Maatwebsite\Excel\Facades\Excel;
 
 class EmailQueueService
 {
-    private $channel;
+    private $RabbitMQService;
+    private $EmailLogService;
 
-    //Fungsi untuk menginisialisasi service RabbitMQ
-    public function __construct(RabbitMQService $RabbitMQService)
+    //Fungsi untuk menginisialisasi service
+    public function __construct(RabbitMQService $RabbitMQService, EmailLogService $EmailLogService)
     {
-        $this->channel = $RabbitMQService->connect();
+        $this->RabbitMQService = $RabbitMQService;
+        $this->EmailLogService = $EmailLogService;
     }
 
     // Map prioritas string ke nilai numerik
@@ -143,6 +144,8 @@ class EmailQueueService
     //Function untuk memproses dan memasukan email ke dalam RabbitMQ
     public function processAndQueueEmails(array $emails, string $secret)
     {
+        $channel = $this->RabbitMQService->connect();
+
         $application = Application::where('secret_key', $secret)
             ->where('status', 'enabled')
             ->first();
@@ -161,6 +164,10 @@ class EmailQueueService
             ) {
                 return ['error' => 'Field "to", "priority", dan "secret" wajib diisi.'];
             }
+
+            $emailLog = $this->EmailLogService->logEmail($mail, $application->id);
+            $mail['id'] = $emailLog->id;
+
             try {
                 $priority = $this->priorityMap[$mail['priority']] ?? 2;
                 $subject = $mail['subject'] ?? '';
@@ -184,13 +191,19 @@ class EmailQueueService
                     ]
                 );
 
-                $this->channel->basic_publish($msg, 'email_exchange', 'email');
+                $channel->basic_publish($msg, 'email_exchange', 'email');
 
                 $messageDataReturn = $messageData;
-                unset($messageDataReturn['id'], $messageDataReturn['secret']);
+                unset($messageDataReturn['secret']);
 
                 $messages[] = $messageDataReturn;
             } catch (\Exception $e) {
+                $this->EmailLogService->updateLog(
+                    ['id' => $mail['id']],
+                    'failed',
+                    'Antrian error: ' . $e->getMessage(),
+                    $application->id
+                );
                 return ['error' => 'Antrian error: ' . $e->getMessage()];
             }
         }
@@ -244,17 +257,13 @@ class EmailQueueService
         });
 
         // Kirim email ke RabbitMQ
-        foreach ($messages as &$message) {
-            $emailLog = app(EmailLogService::class)->logEmail($message, $message['application_id']);
-            $message['id'] = $emailLog->id;
-        }
-
         $result = $this->processAndQueueEmails($messages, $messages[0]['secret']);
 
         if (isset($result['error'])) {
             return ['error' => $result['error']];
         }
 
+        // Return messages with id (already set in processAndQueueEmails)
         return ['messages' => $result['messages']];
     }
 }
