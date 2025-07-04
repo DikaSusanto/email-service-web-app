@@ -10,8 +10,7 @@ class RabbitMQService
 
     public function __construct()
     {
-        $this->connect();
-        $this->initializeEmailQueue();
+        
     }
 
     //Untuk koneksi ke RabbitMQ
@@ -20,6 +19,7 @@ class RabbitMQService
         if (!$this->connection) {
             $this->connection = new AMQPStreamConnection('localhost', 5672, 'guest', 'guest');
             $this->channel = $this->connection->channel();
+            $this->initializeEmailQueue();
         }
         return $this->channel;
     }
@@ -27,20 +27,16 @@ class RabbitMQService
     //Untuk menginisialisasi exchange dan queue di RabbitMQ
     public function initializeEmailQueue()
     {
-        try {
-            // Deklarasi exchange dengan tipe 'direct'
-            $this->channel->exchange_declare('email_exchange', 'direct', false, true, false);
+        // Deklarasi exchange dengan tipe 'direct'
+        $this->channel->exchange_declare('email_exchange', 'direct', false, true, false);
 
-            // Deklarasi queue dengan nama 'email_queue' dan mendukung prioritas
-            $this->channel->queue_declare('email_queue', false, true, false, false, false, [
-                'x-max-priority' => ['I', 3] // Jangkauan prioritas 0-3
-            ]);
+        // Deklarasi queue dengan nama 'email_queue' dan mendukung prioritas
+        $this->channel->queue_declare('email_queue', false, true, false, false, false, [
+            'x-max-priority' => ['I', 3] // Jangkauan prioritas 0-3
+        ]);
 
-            // Bind queue ke exchange dengan routing key 'email'
-            $this->channel->queue_bind('email_queue', 'email_exchange', 'email');
-        } catch (\Exception $e) {
-            return ['error' => 'Koneksi error: ' . $e->getMessage()];
-        }
+        // Bind queue ke exchange dengan routing key 'email'
+        $this->channel->queue_bind('email_queue', 'email_exchange', 'email');
     }
 
     //Untuk mengonsumsi pesan dari RabbitMQ

@@ -68,6 +68,34 @@
 
                 <!-- Modal body -->
                 <div class="p-8">
+                <div v-if="generalError"
+                    class="w-full mb-6 p-4 bg-red-50 border-l-4 border-red-400 rounded-r-lg shadow-sm"
+                    role="alert">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <svg class="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                            </svg>
+                        </div>
+                        <div class="ml-3 flex-1">
+                            <div class="text-sm text-red-700 space-y-1">
+                                <div class="flex items-start space-x-2">
+                                    <span class="w-1.5 h-1.5 bg-red-400 rounded-full mt-2 flex-shrink-0"></span>
+                                    <span>{{ generalError }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button @click="generalError = ''"
+                            class="flex-shrink-0 ml-4 text-red-400 hover:text-red-600 transition-colors duration-200">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
                     <!-- Two Column Layout -->
                     <div class="grid md:grid-cols-2 gap-8">
                         <!-- Left Column - Download Template -->
@@ -560,6 +588,7 @@ const formatError = ref(null);
 const error = ref("");
 const modalExcel = ref(null);
 const isLoading = ref(false);
+const generalError = ref("");
 
 // URL API dari environment variable
 const baseUrl = import.meta.env.VITE_APP_URL;
@@ -639,10 +668,12 @@ async function uploadFile() {
         if (fileInput.value) {
             fileInput.value.value = null;
         }
+        generalError.value = ""; 
     } catch (error) {
         fileError.value = null;
         formatError.value = null;
-        error.value = "Terjadi kesalahan saat mengunggah berkas.";
+        generalError.value = ""; 
+
         try {
             const errMessage = JSON.parse(error.request.response);
             if (
@@ -651,14 +682,24 @@ async function uploadFile() {
                 errMessage.original.messages.excel_file
             ) {
                 fileError.value = errMessage.original.messages.excel_file;
-            } else {
+            } else if (errMessage.messages) {
                 formatError.value = errMessage.messages;
+            } else {
+                generalError.value =
+                    errMessage.message ||
+                    "Terjadi kesalahan saat mengunggah berkas.";
             }
         } catch (parseError) {
-            console.error(
-                "Terjadi kesalahan saat mengurai respons server:",
-                parseError
-            );
+            if (
+                error.response &&
+                (error.response.status === 500 || error.response.status === 503)
+            ) {
+                generalError.value =
+                    error.response.data?.message ||
+                    "Terjadi kesalahan pada server (RabbitMQ).";
+            } else {
+                generalError.value = "Terjadi kesalahan saat mengunggah berkas.";
+            }
         }
     } finally {
         isLoading.value = false;
@@ -678,6 +719,7 @@ watch(
             fileError.value = null;
             formatError.value = null;
             error.value = "";
+            generalError.value = "";
             selectedFile.value = null;
             isLoading.value = false;
             if (fileInput.value) {

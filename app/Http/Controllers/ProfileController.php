@@ -56,7 +56,6 @@ class ProfileController extends Controller
                 'required',
                 'string',
                 'min:8',
-                'max:12',
                 'regex:/[A-Z]/',
                 'regex:/[a-z]/',
                 'regex:/[0-9]/',
@@ -67,7 +66,6 @@ class ProfileController extends Controller
             'current_password.required' => 'Password saat ini wajib diisi.',
             'new_password.required' => 'Password baru wajib diisi.',
             'new_password.min' => 'Password baru minimal harus 8 karakter.',
-            'new_password.max' => 'Password baru maksimal 12 karakter.',
             'new_password.regex' => 'Password baru harus mengandung huruf besar, huruf kecil, angka, dan simbol khusus.',
             'new_password_confirmation.required' => 'Konfirmasi password baru wajib diisi.',
         ], [
